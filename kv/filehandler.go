@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/KohlsTechnology/git2consul-go/repository"
+	"github.com/magiconair/properties"
 	"gopkg.in/yaml.v2"
 )
 
@@ -45,6 +46,11 @@ type YAMLFile struct {
 	path string
 }
 
+//PROPERTIES structure
+type PropertiesFile struct {
+	path string
+}
+
 //Init initializes new instance of File interface based on it's extension.
 func Init(path string, repo repository.Repo) File {
 	config := repo.GetConfig()
@@ -54,6 +60,8 @@ func Init(path string, repo repository.Repo) File {
 	if expandKeys {
 		if ext == ".yml" {
 			f = &YAMLFile{path: path}
+		} else if ext == ".properties" {
+			f = &PropertiesFile{path: path}
 		}
 	}
 	if f == nil {
@@ -173,4 +181,45 @@ func entriesToKV(node map[interface{}]interface{}) map[string][]byte {
 		}
 	}
 	return keys
+}
+
+func (f *PropertiesFile) Update(kv Handler, repo repository.Repo) error {
+	f.Delete(kv, repo) //nolint:errcheck
+	return f.Create(kv, repo)
+}
+
+func (f *PropertiesFile) Create(kv Handler, repo repository.Repo) error {
+
+	p, err := properties.LoadFile(f.path, properties.UTF8)
+	if err != nil {
+		return err
+	}
+	path := f.GetPath()
+	extension := filepath.Ext(path)
+	fileName := strings.TrimSuffix(path, extension)
+	for _, key := range p.Keys() {
+		value, ok := p.Get(key)
+		if ok {
+			err = kv.PutKV(repo, filepath.Join(fileName, key), []byte(value))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (f *PropertiesFile) Delete(kv Handler, repo repository.Repo) error {
+	path := f.GetPath()
+	extension := filepath.Ext(path)
+	fileName := strings.TrimSuffix(path, extension)
+	err := kv.DeleteTreeKV(repo, fileName)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f *PropertiesFile) GetPath() string {
+	return f.path
 }
